@@ -87,75 +87,77 @@ def translate_pdf_via_docx(pdf_path, target_lang, auth_key, output_path=None):
         output_path = f"{base_name}_{target_lang}.pdf"
 
     # Create temporary directory for intermediate files
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Temporary file paths
-        temp_docx = os.path.join(temp_dir, "temp_document.docx")
-        translated_docx = os.path.join(temp_dir, "translated_document.docx")
+    # with tempfile.TemporaryDirectory() as temp_dir:  ##########
+    temp_dir = tempfile.mkdtemp(dir=".")  ##########
 
-        print(f"Converting PDF to DOCX: {pdf_path} -> {temp_docx}")
-        # Convert PDF to DOCX
-        cv = Converter(pdf_path)
-        cv.convert(temp_docx)
-        cv.close()
+    # Temporary file paths
+    temp_docx = os.path.join(temp_dir, "temp_document.docx")
+    translated_docx = os.path.join(temp_dir, "translated_document.docx")
 
-        print("DOCX conversion complete. Starting translation...")
-        # Open the DOCX file
-        doc = Document(temp_docx)
+    print(f"Converting PDF to DOCX: {pdf_path} -> {temp_docx}")
+    # Convert PDF to DOCX
+    cv = Converter(pdf_path)
+    cv.convert(temp_docx)
+    cv.close()
 
-        # Translate paragraphs
-        total_paragraphs = len(doc.paragraphs)
-        print(f"Total paragraphs to translate: {total_paragraphs}")
-        for i, paragraph in enumerate(doc.paragraphs):
+    print("DOCX conversion complete. Starting translation...")
+    # Open the DOCX file
+    doc = Document(temp_docx)
+
+    # Translate paragraphs
+    total_paragraphs = len(doc.paragraphs)
+    print(f"Total paragraphs to translate: {total_paragraphs}")
+    for i, paragraph in enumerate(doc.paragraphs):
+        if paragraph.text.strip():
+            print(f"Translating paragraph {i+1}/{total_paragraphs}...")
+            translated_text = translate_text_with_deepl(paragraph.text, target_lang, auth_key)
+            paragraph.text = translated_text
+
+    # Translate tables
+    tables_count = len(doc.tables)
+    print(f"Total tables to translate: {tables_count}")
+    for table_idx, table in enumerate(doc.tables):
+        print(f"Translating table {table_idx+1}/{tables_count}...")
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    if paragraph.text.strip():
+                        translated_text = translate_text_with_deepl(paragraph.text, target_lang, auth_key)
+                        paragraph.text = translated_text
+
+    # Translate text boxes and other elements in headers/footers
+    sections_count = len(doc.sections)
+    print(f"Total sections to check for headers/footers: {sections_count}")
+    for section_idx, section in enumerate(doc.sections):
+        print(f"Translating headers and footers in section {section_idx+1}/{sections_count}...")
+
+        # Process header
+        for paragraph in section.header.paragraphs:
             if paragraph.text.strip():
-                print(f"Translating paragraph {i+1}/{total_paragraphs}...")
                 translated_text = translate_text_with_deepl(paragraph.text, target_lang, auth_key)
                 paragraph.text = translated_text
 
-        # Translate tables
-        tables_count = len(doc.tables)
-        print(f"Total tables to translate: {tables_count}")
-        for table_idx, table in enumerate(doc.tables):
-            print(f"Translating table {table_idx+1}/{tables_count}...")
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        if paragraph.text.strip():
-                            translated_text = translate_text_with_deepl(paragraph.text, target_lang, auth_key)
-                            paragraph.text = translated_text
+        # Process footer
+        for paragraph in section.footer.paragraphs:
+            if paragraph.text.strip():
+                translated_text = translate_text_with_deepl(paragraph.text, target_lang, auth_key)
+                paragraph.text = translated_text
 
-        # Translate text boxes and other elements in headers/footers
-        sections_count = len(doc.sections)
-        print(f"Total sections to check for headers/footers: {sections_count}")
-        for section_idx, section in enumerate(doc.sections):
-            print(f"Translating headers and footers in section {section_idx+1}/{sections_count}...")
+    # Save the translated DOCX
+    print(f"Saving translated DOCX: {translated_docx}")
+    doc.save(translated_docx)
 
-            # Process header
-            for paragraph in section.header.paragraphs:
-                if paragraph.text.strip():
-                    translated_text = translate_text_with_deepl(paragraph.text, target_lang, auth_key)
-                    paragraph.text = translated_text
-
-            # Process footer
-            for paragraph in section.footer.paragraphs:
-                if paragraph.text.strip():
-                    translated_text = translate_text_with_deepl(paragraph.text, target_lang, auth_key)
-                    paragraph.text = translated_text
-
-        # Save the translated DOCX
-        print(f"Saving translated DOCX: {translated_docx}")
-        doc.save(translated_docx)
-
-        # Convert back to PDF
-        print(f"Converting translated DOCX to PDF: {translated_docx} -> {output_path}")
-        try:
-            convert(translated_docx, output_path)
-            print(f"Translation completed! Output saved to: {output_path}")
-        except Exception as e:
-            print(f"Error converting DOCX to PDF: {e}")
-            print(f"Saving translated DOCX only to: {output_path.replace('.pdf', '.docx')}")
-            # Save as DOCX if PDF conversion fails
-            import shutil
-            shutil.copy2(translated_docx, output_path.replace('.pdf', '.docx'))
+    # Convert back to PDF
+    print(f"Converting translated DOCX to PDF: {translated_docx} -> {output_path}")
+    try:
+        convert(translated_docx, output_path)
+        print(f"Translation completed! Output saved to: {output_path}")
+    except Exception as e:
+        print(f"Error converting DOCX to PDF: {e}")
+        print(f"Saving translated DOCX only to: {output_path.replace('.pdf', '.docx')}")
+        # Save as DOCX if PDF conversion fails
+        import shutil
+        shutil.copy2(translated_docx, output_path.replace('.pdf', '.docx'))
 
 def main():
     parser = argparse.ArgumentParser(description='Translate PDF files using DeepL API while preserving formatting and images')
@@ -175,3 +177,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Example usage:
+# python pdf_translator.py epyramid_infant_toddler_leader_guide_5.pdf ES --auth-key XXX --output epyramid_infant_toddler_leader_guide_5_es.pdf
